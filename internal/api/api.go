@@ -25,6 +25,11 @@ func (a *API) Routes() http.Handler {
 	mux.HandleFunc("POST /items", a.handleCreateItem)
 	mux.HandleFunc("GET /items/{id}", a.handleGetItem)
 	mux.HandleFunc("DELETE /items/{id}", a.handleDeleteItem)
+	mux.HandleFunc("GET /widgets", a.handleListWidgets)
+	mux.HandleFunc("POST /widgets", a.handleCreateWidget)
+	mux.HandleFunc("GET /widgets/{id}", a.handleGetWidget)
+	mux.HandleFunc("PUT /widgets/{id}", a.handleUpdateWidget)
+	mux.HandleFunc("DELETE /widgets/{id}", a.handleDeleteWidget)
 	return mux
 }
 
@@ -82,6 +87,97 @@ func (a *API) handleDeleteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.store.DeleteItem(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) handleListWidgets(w http.ResponseWriter, r *http.Request) {
+	widgets, err := a.store.ListWidgets()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, widgets)
+}
+
+func (a *API) handleCreateWidget(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name  string `json:"name"`
+		Price int64  `json:"price"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if body.Name == "" {
+		writeError(w, http.StatusBadRequest, errors.New("name is required"))
+		return
+	}
+	if body.Price == 0 {
+		writeError(w, http.StatusBadRequest, errors.New("price is required"))
+		return
+	}
+	widget, err := a.store.CreateWidget(body.Name, body.Price)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, widget)
+}
+
+func (a *API) handleGetWidget(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid id"))
+		return
+	}
+	widget, err := a.store.GetWidget(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, widget)
+}
+
+func (a *API) handleUpdateWidget(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid id"))
+		return
+	}
+	var body struct {
+		Name  string `json:"name"`
+		Price int64  `json:"price"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if body.Name == "" {
+		writeError(w, http.StatusBadRequest, errors.New("name is required"))
+		return
+	}
+	if body.Price == 0 {
+		writeError(w, http.StatusBadRequest, errors.New("price is required"))
+		return
+	}
+	widget, err := a.store.UpdateWidget(id, body.Name, body.Price)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, widget)
+}
+
+func (a *API) handleDeleteWidget(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid id"))
+		return
+	}
+	if err := a.store.DeleteWidget(id); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}

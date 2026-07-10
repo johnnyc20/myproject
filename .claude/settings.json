@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in *.go) out=$(go vet ./... 2>&1); code=$?; if [ $code -ne 0 ]; then echo \"$out\" >&2; exit 2; fi ;; esac; }",
+            "statusMessage": "Running go vet..."
+          }
+        ]
+      }
+    ]
+  }
+}
