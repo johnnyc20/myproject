@@ -1,5 +1,7 @@
 # myproject
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A Go HTTP API server backed by SQLite.
 
 ## Requirements
