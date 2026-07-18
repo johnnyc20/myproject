@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -22,6 +23,22 @@ type Widget struct {
 	Name      string    `json:"name"`
 	Price     int64     `json:"price"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type Note struct {
+	ID        int64     `json:"id"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type Memory struct {
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	Type        string    `json:"type"`
+	Description string    `json:"description"`
+	Content     string    `json:"content"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 func Open(path string) (*Store, error) {
@@ -61,6 +78,72 @@ func (s *Store) migrate() error {
 			price INTEGER NOT NULL,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		)
+	`)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS notes (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			body TEXT NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return err
+	}
+	return s.migrateMemories()
+}
+
+func (s *Store) migrateMemories() error {
+	_, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS memories (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			type TEXT NOT NULL,
+			description TEXT NOT NULL,
+			content TEXT NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`
+		CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+			name, description, content,
+			content='memories', content_rowid='id'
+		)
+	`)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`
+		CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
+			INSERT INTO memories_fts(rowid, name, description, content)
+			VALUES (new.id, new.name, new.description, new.content);
+		END
+	`)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`
+		CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
+			INSERT INTO memories_fts(memories_fts, rowid, name, description, content)
+			VALUES ('delete', old.id, old.name, old.description, old.content);
+		END
+	`)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`
+		CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+			INSERT INTO memories_fts(memories_fts, rowid, name, description, content)
+			VALUES ('delete', old.id, old.name, old.description, old.content);
+			INSERT INTO memories_fts(rowid, name, description, content)
+			VALUES (new.id, new.name, new.description, new.content);
+		END
 	`)
 	return err
 }
@@ -162,4 +245,140 @@ func (s *Store) UpdateWidget(id int64, name string, price int64) (Widget, error)
 func (s *Store) DeleteWidget(id int64) error {
 	_, err := s.db.Exec(`DELETE FROM widgets WHERE id = ?`, id)
 	return err
+}
+
+func (s *Store) ListNotes() ([]Note, error) {
+	rows, err := s.db.Query(`SELECT id, body, created_at FROM notes ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	notes := []Note{}
+	for rows.Next() {
+		var n Note
+		if err := rows.Scan(&n.ID, &n.Body, &n.CreatedAt); err != nil {
+			return nil, err
+		}
+		notes = append(notes, n)
+	}
+	return notes, rows.Err()
+}
+
+func (s *Store) GetNote(id int64) (Note, error) {
+	var n Note
+	err := s.db.QueryRow(`SELECT id, body, created_at FROM notes WHERE id = ?`, id).
+		Scan(&n.ID, &n.Body, &n.CreatedAt)
+	return n, err
+}
+
+func (s *Store) CreateNote(body string) (Note, error) {
+	res, err := s.db.Exec(`INSERT INTO notes (body) VALUES (?)`, body)
+	if err != nil {
+		return Note{}, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return Note{}, err
+	}
+	return s.GetNote(id)
+}
+
+const memoryColumns = `id, name, type, description, content, created_at, updated_at`
+
+func scanMemory(row interface{ Scan(...any) error }) (Memory, error) {
+	var m Memory
+	err := row.Scan(&m.ID, &m.Name, &m.Type, &m.Description, &m.Content, &m.CreatedAt, &m.UpdatedAt)
+	return m, err
+}
+
+func (s *Store) ListMemories(memType string) ([]Memory, error) {
+	query := `SELECT ` + memoryColumns + ` FROM memories`
+	args := []any{}
+	if memType != "" {
+		query += ` WHERE type = ?`
+		args = append(args, memType)
+	}
+	query += ` ORDER BY id`
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	memories := []Memory{}
+	for rows.Next() {
+		m, err := scanMemory(rows)
+		if err != nil {
+			return nil, err
+		}
+		memories = append(memories, m)
+	}
+	return memories, rows.Err()
+}
+
+func (s *Store) GetMemory(id int64) (Memory, error) {
+	row := s.db.QueryRow(`SELECT `+memoryColumns+` FROM memories WHERE id = ?`, id)
+	return scanMemory(row)
+}
+
+func (s *Store) CreateMemory(name, memType, description, content string) (Memory, error) {
+	res, err := s.db.Exec(
+		`INSERT INTO memories (name, type, description, content) VALUES (?, ?, ?, ?)`,
+		name, memType, description, content,
+	)
+	if err != nil {
+		return Memory{}, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return Memory{}, err
+	}
+	return s.GetMemory(id)
+}
+
+func (s *Store) DeleteMemory(id int64) error {
+	res, err := s.db.Exec(`DELETE FROM memories WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// ftsPhraseQuery wraps user input as a quoted FTS5 phrase so characters like
+// "-" aren't interpreted as query syntax (NOT, column filters, etc).
+func ftsPhraseQuery(query string) string {
+	return `"` + strings.ReplaceAll(query, `"`, `""`) + `"`
+}
+
+func (s *Store) SearchMemories(query string) ([]Memory, error) {
+	rows, err := s.db.Query(`
+		SELECT m.id, m.name, m.type, m.description, m.content, m.created_at, m.updated_at
+		FROM memories_fts
+		JOIN memories m ON m.id = memories_fts.rowid
+		WHERE memories_fts MATCH ?
+		ORDER BY rank
+	`, ftsPhraseQuery(query))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	memories := []Memory{}
+	for rows.Next() {
+		m, err := scanMemory(rows)
+		if err != nil {
+			return nil, err
+		}
+		memories = append(memories, m)
+	}
+	return memories, rows.Err()
 }

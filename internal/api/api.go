@@ -30,7 +30,22 @@ func (a *API) Routes() http.Handler {
 	mux.HandleFunc("GET /widgets/{id}", a.handleGetWidget)
 	mux.HandleFunc("PUT /widgets/{id}", a.handleUpdateWidget)
 	mux.HandleFunc("DELETE /widgets/{id}", a.handleDeleteWidget)
+	mux.HandleFunc("GET /notes", a.handleListNotes)
+	mux.HandleFunc("POST /notes", a.handleCreateNote)
+	mux.HandleFunc("GET /notes/{id}", a.handleGetNote)
+	mux.HandleFunc("GET /memories/search", a.handleSearchMemories)
+	mux.HandleFunc("GET /memories", a.handleListMemories)
+	mux.HandleFunc("POST /memories", a.handleCreateMemory)
+	mux.HandleFunc("GET /memories/{id}", a.handleGetMemory)
+	mux.HandleFunc("DELETE /memories/{id}", a.handleDeleteMemory)
 	return mux
+}
+
+var validMemoryTypes = map[string]bool{
+	"user":      true,
+	"feedback":  true,
+	"project":   true,
+	"reference": true,
 }
 
 func (a *API) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -182,6 +197,135 @@ func (a *API) handleDeleteWidget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) handleListNotes(w http.ResponseWriter, r *http.Request) {
+	notes, err := a.store.ListNotes()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, notes)
+}
+
+func (a *API) handleCreateNote(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Body string `json:"body"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	note, err := a.store.CreateNote(body.Body)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, note)
+}
+
+func (a *API) handleGetNote(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid id"))
+		return
+	}
+	note, err := a.store.GetNote(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, note)
+}
+
+func (a *API) handleListMemories(w http.ResponseWriter, r *http.Request) {
+	memType := r.URL.Query().Get("type")
+	if memType != "" && !validMemoryTypes[memType] {
+		writeError(w, http.StatusBadRequest, errors.New("invalid type"))
+		return
+	}
+	memories, err := a.store.ListMemories(memType)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, memories)
+}
+
+func (a *API) handleCreateMemory(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name        string `json:"name"`
+		Type        string `json:"type"`
+		Description string `json:"description"`
+		Content     string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if body.Name == "" {
+		writeError(w, http.StatusBadRequest, errors.New("name is required"))
+		return
+	}
+	if !validMemoryTypes[body.Type] {
+		writeError(w, http.StatusBadRequest, errors.New("invalid type"))
+		return
+	}
+	if body.Description == "" {
+		writeError(w, http.StatusBadRequest, errors.New("description is required"))
+		return
+	}
+	if body.Content == "" {
+		writeError(w, http.StatusBadRequest, errors.New("content is required"))
+		return
+	}
+	memory, err := a.store.CreateMemory(body.Name, body.Type, body.Description, body.Content)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, memory)
+}
+
+func (a *API) handleGetMemory(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid id"))
+		return
+	}
+	memory, err := a.store.GetMemory(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, memory)
+}
+
+func (a *API) handleDeleteMemory(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid id"))
+		return
+	}
+	if err := a.store.DeleteMemory(id); err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) handleSearchMemories(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		writeError(w, http.StatusBadRequest, errors.New("q is required"))
+		return
+	}
+	memories, err := a.store.SearchMemories(q)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, memories)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
