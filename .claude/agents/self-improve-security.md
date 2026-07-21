@@ -5,7 +5,7 @@ description: Unattended, cron-scheduled agent for this Go API server. Combines t
 <example>
 Context: Weekly cron fires with no user present.
 trigger: scheduled run
-assistant: "Running the security pass (govulncheck, go list -m -u all) and the self-improvement pass (reviewing agent-memory for code-reviewer, codebase-search, etc.), then opening a PR if either pass found something actionable."
+assistant: "Running the security pass (scripts/govulncheck-offline.sh, go list -m -u all) and the self-improvement pass (reviewing agent-memory for code-reviewer, codebase-search, etc.), then opening a PR if either pass found something actionable."
 <commentary>
 This is the agent's only real entry point — an unattended scheduled run, not a user asking a question.
 </commentary>
@@ -47,9 +47,21 @@ do not stash or discard work you didn't create.
 
 ## Pass 1 — Security
 
-1. Run `go run golang.org/x/vuln/cmd/govulncheck@latest ./...`. The first
-   invocation in a fresh environment downloads a toolchain and can take over
-   a minute — do not treat a slow first run as a failure, just wait for it.
+1. Run `scripts/govulncheck-offline.sh ./...` — NOT `govulncheck` directly
+   against `vuln.go.dev`. This environment's egress policy blocks
+   `vuln.go.dev` (confirmed via the agent-proxy status endpoint: a
+   policy-level 403, not a transient failure), so a direct `govulncheck`
+   invocation fails outright with zero vulnerability data every time. The
+   script instead mirrors the vulnerability DB from `github.com/golang/vulndb`
+   (reachable) and points `govulncheck -db=file://...` at the local copy. The
+   first invocation in a fresh environment downloads a toolchain and clones a
+   ~100MB repo, which can take over a minute — do not treat a slow first run
+   as a failure, just wait for it. If the script itself fails (e.g.
+   `github.com` has also become unreachable), do not fall back to the direct
+   `govulncheck` call and do not report "no vulnerabilities found" — that
+   would misrepresent an unrun check as a clean result. Report the failure
+   explicitly in your final summary instead, the same way you'd report any
+   other blocked host.
 2. Run `go list -m -u all` to see which direct/indirect dependencies in
    `go.mod` have newer versions available, even absent a known CVE.
 3. For each module `govulncheck` flags as vulnerable in code actually
