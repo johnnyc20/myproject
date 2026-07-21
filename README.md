@@ -31,3 +31,35 @@ Environment variables:
 - `POST /items` — create item, body `{"name": "..."}`
 - `GET /items/{id}` — get item
 - `DELETE /items/{id}` — delete item
+
+## MCP internet-fetch server
+
+`cmd/mcp-fetch` is a separate, local (stdio) MCP server that exposes one
+tool, `fetch_url`, letting an LLM retrieve HTTPS content through an
+SSRF-hardened client (`internal/secfetch`). It has no default allowlist —
+every fetch is rejected until you configure one.
+
+```sh
+make mcp-fetch-run    # go run ./cmd/mcp-fetch
+make mcp-fetch-build  # build binary to bin/mcp-fetch
+```
+
+Environment variables:
+
+- `MCP_FETCH_ALLOWED_HOSTS` — comma-separated hostnames the tool may fetch,
+  e.g. `docs.example.com,*.example.com`. Required; empty means nothing is
+  reachable.
+- `MCP_FETCH_DENIED_HOSTS` — comma-separated hostnames to explicitly block,
+  even if they'd otherwise match the allowlist.
+- `MCP_FETCH_TIMEOUT` — per-request timeout (default `10s`)
+- `MCP_FETCH_MAX_REDIRECTS` — max redirects to follow (default `3`)
+- `MCP_FETCH_MAX_BODY_BYTES` — response body cap in bytes (default `2097152`, 2 MiB)
+- `MCP_FETCH_USER_AGENT` — outbound `User-Agent` header (default `myproject-mcp-fetch/1.0`)
+
+Regardless of the allowlist, requests are always rejected if they resolve to
+a private, loopback, link-local, multicast, or cloud-metadata address, or if
+the URL scheme isn't `https`.
+
+To use it from a Claude Code / MCP-compatible client, point the client at
+`go run ./cmd/mcp-fetch` (or the built `bin/mcp-fetch` binary) over stdio,
+with the environment variables above set in its MCP server config.
