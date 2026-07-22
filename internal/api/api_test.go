@@ -115,6 +115,41 @@ func TestUpdateAndDeleteWidget(t *testing.T) {
 	}
 }
 
+func TestCreateAndGetNote(t *testing.T) {
+	a := newTestAPI(t)
+
+	createReq := httptest.NewRequest(http.MethodPost, "/notes", strings.NewReader(`{"body":"remember this"}`))
+	createRec := httptest.NewRecorder()
+	a.Routes().ServeHTTP(createRec, createReq)
+
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", createRec.Code, createRec.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/notes/1", nil)
+	getRec := httptest.NewRecorder()
+	a.Routes().ServeHTTP(getRec, getReq)
+
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", getRec.Code, getRec.Body.String())
+	}
+	if !strings.Contains(getRec.Body.String(), "remember this") {
+		t.Fatalf("expected body to contain 'remember this', got %s", getRec.Body.String())
+	}
+}
+
+func TestGetNoteNotFound(t *testing.T) {
+	a := newTestAPI(t)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/notes/1", nil)
+	getRec := httptest.NewRecorder()
+	a.Routes().ServeHTTP(getRec, getReq)
+
+	if getRec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", getRec.Code, getRec.Body.String())
+	}
+}
+
 func createMemory(t *testing.T, a *API, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/memories", strings.NewReader(body))

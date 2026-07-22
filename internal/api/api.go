@@ -232,7 +232,7 @@ func (a *API) handleGetNote(w http.ResponseWriter, r *http.Request) {
 	}
 	note, err := a.store.GetNote(id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		writeError(w, http.StatusNotFound, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, note)

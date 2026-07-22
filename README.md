@@ -31,6 +31,20 @@ Environment variables:
 - `POST /items` — create item, body `{"name": "..."}`
 - `GET /items/{id}` — get item
 - `DELETE /items/{id}` — delete item
+- `GET /widgets` — list widgets
+- `POST /widgets` — create widget, body `{"name": "...", "price": 1999}`
+- `GET /widgets/{id}` — get widget
+- `PUT /widgets/{id}` — update widget, body `{"name": "...", "price": 1999}`
+- `DELETE /widgets/{id}` — delete widget
+- `GET /notes` — list notes
+- `POST /notes` — create note, body `{"body": "..."}`
+- `GET /notes/{id}` — get note
+- `GET /memories` — list memories, optionally filtered with `?type=`
+  (`user`, `feedback`, `project`, or `reference`)
+- `POST /memories` — create memory, body `{"name": "...", "type": "...", "description": "...", "content": "..."}`
+- `GET /memories/{id}` — get memory
+- `DELETE /memories/{id}` — delete memory
+- `GET /memories/search?q=...` — full-text search over memories
 
 ## MCP internet-fetch server
 
