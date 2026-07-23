@@ -45,6 +45,17 @@ Environment variables:
 - `GET /memories/{id}` — get memory
 - `DELETE /memories/{id}` — delete memory
 - `GET /memories/search?q=...` — full-text search over memories
+- `GET /memories/{id}/relationships` — list graph edges touching this memory
+  (either direction)
+- `POST /memories/{id}/relationships` — create a directed edge, body
+  `{"to_memory_id": 2, "type": "..."}` (`references`, `contradicts`,
+  `related_to`, or `supersedes`)
+- `DELETE /memories/{id}/relationships/{relId}` — delete an edge
+
+Memories form a small knowledge graph this way — nodes are memories, edges
+are typed relationships between them. Deleting a memory cascades to delete
+its relationships (SQLite foreign keys are enforced via `PRAGMA foreign_keys
+= ON`).
 
 ## MCP internet-fetch server
 
