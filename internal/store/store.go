@@ -2,15 +2,25 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
 )
 
 type Store struct {
 	db *sql.DB
 }
+
+// ErrInvalidReference is returned when a memory relationship refers to a
+// from/to memory id that doesn't exist.
+var ErrInvalidReference = errors.New("invalid reference")
+
+// sqliteConstraintForeignKey is SQLITE_CONSTRAINT_FOREIGNKEY (787) — pulled
+// in as a plain constant rather than importing modernc.org/sqlite/lib for
+// one value.
+const sqliteConstraintForeignKey = 787
 
 type Item struct {
 	ID        int64     `json:"id"`
@@ -41,12 +51,27 @@ type Memory struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+// MemoryRelationship is a directed edge between two memories, making the
+// memories table a lightweight knowledge graph (nodes = memories, edges =
+// relationships) on top of the existing SQLite store rather than a
+// separate graph database.
+type MemoryRelationship struct {
+	ID           int64     `json:"id"`
+	FromMemoryID int64     `json:"from_memory_id"`
+	ToMemoryID   int64     `json:"to_memory_id"`
+	Type         string    `json:"type"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
 func Open(path string) (*Store, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
 	}
 	if err := db.Ping(); err != nil {
+		return nil, err
+	}
+	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
 		return nil, err
 	}
 	s := &Store{db: db}
@@ -92,7 +117,10 @@ func (s *Store) migrate() error {
 	if err != nil {
 		return err
 	}
-	return s.migrateMemories()
+	if err := s.migrateMemories(); err != nil {
+		return err
+	}
+	return s.migrateMemoryRelationships()
 }
 
 func (s *Store) migrateMemories() error {
@@ -144,6 +172,33 @@ func (s *Store) migrateMemories() error {
 			INSERT INTO memories_fts(rowid, name, description, content)
 			VALUES (new.id, new.name, new.description, new.content);
 		END
+	`)
+	return err
+}
+
+func (s *Store) migrateMemoryRelationships() error {
+	_, err := s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS memory_relationships (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			from_memory_id INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+			to_memory_id INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+			type TEXT NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`
+		CREATE INDEX IF NOT EXISTS memory_relationships_from_idx
+			ON memory_relationships(from_memory_id)
+	`)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`
+		CREATE INDEX IF NOT EXISTS memory_relationships_to_idx
+			ON memory_relationships(to_memory_id)
 	`)
 	return err
 }
@@ -381,4 +436,74 @@ func (s *Store) SearchMemories(query string) ([]Memory, error) {
 		memories = append(memories, m)
 	}
 	return memories, rows.Err()
+}
+
+func scanMemoryRelationship(row interface{ Scan(...any) error }) (MemoryRelationship, error) {
+	var r MemoryRelationship
+	err := row.Scan(&r.ID, &r.FromMemoryID, &r.ToMemoryID, &r.Type, &r.CreatedAt)
+	return r, err
+}
+
+func (s *Store) CreateMemoryRelationship(fromID, toID int64, relType string) (MemoryRelationship, error) {
+	res, err := s.db.Exec(
+		`INSERT INTO memory_relationships (from_memory_id, to_memory_id, type) VALUES (?, ?, ?)`,
+		fromID, toID, relType,
+	)
+	if err != nil {
+		var sqliteErr *sqlite.Error
+		if errors.As(err, &sqliteErr) && sqliteErr.Code() == sqliteConstraintForeignKey {
+			return MemoryRelationship{}, ErrInvalidReference
+		}
+		return MemoryRelationship{}, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return MemoryRelationship{}, err
+	}
+	row := s.db.QueryRow(
+		`SELECT id, from_memory_id, to_memory_id, type, created_at FROM memory_relationships WHERE id = ?`,
+		id,
+	)
+	return scanMemoryRelationship(row)
+}
+
+// ListMemoryRelationships returns every edge touching memoryID, in either
+// direction, since a knowledge-graph traversal from a node needs both its
+// outgoing and incoming edges.
+func (s *Store) ListMemoryRelationships(memoryID int64) ([]MemoryRelationship, error) {
+	rows, err := s.db.Query(`
+		SELECT id, from_memory_id, to_memory_id, type, created_at
+		FROM memory_relationships
+		WHERE from_memory_id = ? OR to_memory_id = ?
+		ORDER BY id
+	`, memoryID, memoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	relationships := []MemoryRelationship{}
+	for rows.Next() {
+		r, err := scanMemoryRelationship(rows)
+		if err != nil {
+			return nil, err
+		}
+		relationships = append(relationships, r)
+	}
+	return relationships, rows.Err()
+}
+
+func (s *Store) DeleteMemoryRelationship(id int64) error {
+	res, err := s.db.Exec(`DELETE FROM memory_relationships WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }

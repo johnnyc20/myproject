@@ -38,6 +38,9 @@ func (a *API) Routes() http.Handler {
 	mux.HandleFunc("POST /memories", a.handleCreateMemory)
 	mux.HandleFunc("GET /memories/{id}", a.handleGetMemory)
 	mux.HandleFunc("DELETE /memories/{id}", a.handleDeleteMemory)
+	mux.HandleFunc("GET /memories/{id}/relationships", a.handleListMemoryRelationships)
+	mux.HandleFunc("POST /memories/{id}/relationships", a.handleCreateMemoryRelationship)
+	mux.HandleFunc("DELETE /memories/{id}/relationships/{relId}", a.handleDeleteMemoryRelationship)
 	return mux
 }
 
@@ -46,6 +49,15 @@ var validMemoryTypes = map[string]bool{
 	"feedback":  true,
 	"project":   true,
 	"reference": true,
+}
+
+// validRelationshipTypes are the edge types a knowledge-graph relationship
+// between two memories can have.
+var validRelationshipTypes = map[string]bool{
+	"references":  true,
+	"contradicts": true,
+	"related_to":  true,
+	"supersedes":  true,
 }
 
 func (a *API) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -232,7 +244,7 @@ func (a *API) handleGetNote(w http.ResponseWriter, r *http.Request) {
 	}
 	note, err := a.store.GetNote(id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		writeError(w, http.StatusNotFound, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, note)
@@ -326,6 +338,75 @@ func (a *API) handleSearchMemories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, memories)
+}
+
+func (a *API) handleListMemoryRelationships(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid id"))
+		return
+	}
+	if _, err := a.store.GetMemory(id); err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	relationships, err := a.store.ListMemoryRelationships(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, relationships)
+}
+
+func (a *API) handleCreateMemoryRelationship(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid id"))
+		return
+	}
+	var body struct {
+		ToMemoryID int64  `json:"to_memory_id"`
+		Type       string `json:"type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if !validRelationshipTypes[body.Type] {
+		writeError(w, http.StatusBadRequest, errors.New("invalid type"))
+		return
+	}
+	if _, err := a.store.GetMemory(id); err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	relationship, err := a.store.CreateMemoryRelationship(id, body.ToMemoryID, body.Type)
+	if err != nil {
+		if errors.Is(err, store.ErrInvalidReference) {
+			writeError(w, http.StatusBadRequest, errors.New("to_memory_id does not exist"))
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, relationship)
+}
+
+func (a *API) handleDeleteMemoryRelationship(w http.ResponseWriter, r *http.Request) {
+	if _, err := strconv.ParseInt(r.PathValue("id"), 10, 64); err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid id"))
+		return
+	}
+	relID, err := strconv.ParseInt(r.PathValue("relId"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("invalid relationship id"))
+		return
+	}
+	if err := a.store.DeleteMemoryRelationship(relID); err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

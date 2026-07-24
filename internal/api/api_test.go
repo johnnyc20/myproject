@@ -115,6 +115,41 @@ func TestUpdateAndDeleteWidget(t *testing.T) {
 	}
 }
 
+func TestCreateAndGetNote(t *testing.T) {
+	a := newTestAPI(t)
+
+	createReq := httptest.NewRequest(http.MethodPost, "/notes", strings.NewReader(`{"body":"remember this"}`))
+	createRec := httptest.NewRecorder()
+	a.Routes().ServeHTTP(createRec, createReq)
+
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", createRec.Code, createRec.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/notes/1", nil)
+	getRec := httptest.NewRecorder()
+	a.Routes().ServeHTTP(getRec, getReq)
+
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", getRec.Code, getRec.Body.String())
+	}
+	if !strings.Contains(getRec.Body.String(), "remember this") {
+		t.Fatalf("expected body to contain 'remember this', got %s", getRec.Body.String())
+	}
+}
+
+func TestGetNoteNotFound(t *testing.T) {
+	a := newTestAPI(t)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/notes/1", nil)
+	getRec := httptest.NewRecorder()
+	a.Routes().ServeHTTP(getRec, getReq)
+
+	if getRec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", getRec.Code, getRec.Body.String())
+	}
+}
+
 func createMemory(t *testing.T, a *API, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/memories", strings.NewReader(body))
@@ -214,5 +249,124 @@ func TestSearchMemories(t *testing.T) {
 	}
 	if strings.Contains(searchRec.Body.String(), "deploy-freeze") {
 		t.Fatalf("expected search results to exclude deploy-freeze, got %s", searchRec.Body.String())
+	}
+}
+
+func TestCreateAndListMemoryRelationship(t *testing.T) {
+	a := newTestAPI(t)
+
+	createMemory(t, a, `{"name":"a","type":"reference","description":"d","content":"c"}`)
+	createMemory(t, a, `{"name":"b","type":"reference","description":"d","content":"c"}`)
+
+	createReq := httptest.NewRequest(http.MethodPost, "/memories/1/relationships", strings.NewReader(`{"to_memory_id":2,"type":"references"}`))
+	createRec := httptest.NewRecorder()
+	a.Routes().ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", createRec.Code, createRec.Body.String())
+	}
+	if !strings.Contains(createRec.Body.String(), `"references"`) {
+		t.Fatalf("expected body to contain relationship type, got %s", createRec.Body.String())
+	}
+
+	// listing from either endpoint of the edge should surface it
+	for _, path := range []string{"/memories/1/relationships", "/memories/2/relationships"} {
+		listReq := httptest.NewRequest(http.MethodGet, path, nil)
+		listRec := httptest.NewRecorder()
+		a.Routes().ServeHTTP(listRec, listReq)
+		if listRec.Code != http.StatusOK {
+			t.Fatalf("GET %s: expected 200, got %d: %s", path, listRec.Code, listRec.Body.String())
+		}
+		if !strings.Contains(listRec.Body.String(), `"references"`) {
+			t.Fatalf("GET %s: expected relationship in list, got %s", path, listRec.Body.String())
+		}
+	}
+}
+
+func TestCreateMemoryRelationshipInvalidType(t *testing.T) {
+	a := newTestAPI(t)
+
+	createMemory(t, a, `{"name":"a","type":"reference","description":"d","content":"c"}`)
+	createMemory(t, a, `{"name":"b","type":"reference","description":"d","content":"c"}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/memories/1/relationships", strings.NewReader(`{"to_memory_id":2,"type":"bogus"}`))
+	rec := httptest.NewRecorder()
+	a.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateMemoryRelationshipInvalidToID(t *testing.T) {
+	a := newTestAPI(t)
+
+	createMemory(t, a, `{"name":"a","type":"reference","description":"d","content":"c"}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/memories/1/relationships", strings.NewReader(`{"to_memory_id":999,"type":"related_to"}`))
+	rec := httptest.NewRecorder()
+	a.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for nonexistent to_memory_id, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDeleteMemoryRelationship(t *testing.T) {
+	a := newTestAPI(t)
+
+	createMemory(t, a, `{"name":"a","type":"reference","description":"d","content":"c"}`)
+	createMemory(t, a, `{"name":"b","type":"reference","description":"d","content":"c"}`)
+
+	createReq := httptest.NewRequest(http.MethodPost, "/memories/1/relationships", strings.NewReader(`{"to_memory_id":2,"type":"related_to"}`))
+	createRec := httptest.NewRecorder()
+	a.Routes().ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", createRec.Code, createRec.Body.String())
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/memories/1/relationships/1", nil)
+	deleteRec := httptest.NewRecorder()
+	a.Routes().ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", deleteRec.Code, deleteRec.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/memories/1/relationships", nil)
+	listRec := httptest.NewRecorder()
+	a.Routes().ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", listRec.Code, listRec.Body.String())
+	}
+	if strings.Contains(listRec.Body.String(), `"related_to"`) {
+		t.Fatalf("expected relationship to be gone after delete, got %s", listRec.Body.String())
+	}
+}
+
+func TestMemoryRelationshipCascadesOnMemoryDelete(t *testing.T) {
+	a := newTestAPI(t)
+
+	createMemory(t, a, `{"name":"a","type":"reference","description":"d","content":"c"}`)
+	createMemory(t, a, `{"name":"b","type":"reference","description":"d","content":"c"}`)
+
+	createReq := httptest.NewRequest(http.MethodPost, "/memories/1/relationships", strings.NewReader(`{"to_memory_id":2,"type":"related_to"}`))
+	createRec := httptest.NewRecorder()
+	a.Routes().ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", createRec.Code, createRec.Body.String())
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/memories/2", nil)
+	deleteRec := httptest.NewRecorder()
+	a.Routes().ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d: %s", deleteRec.Code, deleteRec.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/memories/1/relationships", nil)
+	listRec := httptest.NewRecorder()
+	a.Routes().ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", listRec.Code, listRec.Body.String())
+	}
+	if strings.Contains(listRec.Body.String(), `"related_to"`) {
+		t.Fatalf("expected relationship to cascade-delete with memory 2, got %s", listRec.Body.String())
 	}
 }
