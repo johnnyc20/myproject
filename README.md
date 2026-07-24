@@ -88,3 +88,44 @@ the URL scheme isn't `https`.
 To use it from a Claude Code / MCP-compatible client, point the client at
 `go run ./cmd/mcp-fetch` (or the built `bin/mcp-fetch` binary) over stdio,
 with the environment variables above set in its MCP server config.
+
+## MCP DeepSeek server
+
+`cmd/mcp-deepseek` is another separate, local (stdio) MCP server that exposes
+one tool, `deepseek_chat`, letting an LLM delegate a prompt to DeepSeek's
+chat-completions API (`internal/deepseek`). Unlike `mcp-fetch`, it always
+talks to a single fixed, operator-configured host rather than an arbitrary
+caller-supplied URL, so there's no allowlist to configure — just an API key.
+
+```sh
+make mcp-deepseek-run    # go run ./cmd/mcp-deepseek
+make mcp-deepseek-build  # build binary to bin/mcp-deepseek
+```
+
+Environment variables:
+
+- `DEEPSEEK_API_KEY` — your DeepSeek API key from
+  [platform.deepseek.com](https://platform.deepseek.com). Required; every
+  `deepseek_chat` call is rejected with a clear error until it's set (the
+  server itself still starts, matching `mcp-fetch`'s fail-closed-at-call-time
+  behavior rather than crashing at startup).
+- `DEEPSEEK_BASE_URL` — API base URL (default `https://api.deepseek.com`).
+  Must be `https://`.
+- `DEEPSEEK_MODEL` — default model ID (default `deepseek-chat`; override to
+  e.g. `deepseek-reasoner`, or whatever your account's current model IDs are
+  if DeepSeek has renamed them since this was written).
+- `DEEPSEEK_TIMEOUT` — per-request timeout (default `60s`)
+- `DEEPSEEK_MAX_BODY_BYTES` — response body cap in bytes (default `4194304`, 4 MiB)
+
+To use it from a Claude Code / MCP-compatible client, point the client at
+`go run ./cmd/mcp-deepseek` (or the built `bin/mcp-deepseek` binary) over
+stdio, with `DEEPSEEK_API_KEY` set in its MCP server config.
+
+**Not verified end-to-end**: `api.deepseek.com` is blocked by this
+development environment's own network policy (proxy-level `403` on
+`CONNECT`), so this was built and unit-tested (`internal/deepseek/client_test.go`,
+against a local `httptest` server standing in for the real API) but never
+exercised against the actual DeepSeek API. The request/response shapes match
+DeepSeek's published API docs as of when this was written — verify with a
+real API key before relying on it, and open an issue if DeepSeek has changed
+their contract since.

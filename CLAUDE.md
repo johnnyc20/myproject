@@ -12,6 +12,9 @@ make vet     # go vet ./...
 
 make mcp-fetch-run    # go run ./cmd/mcp-fetch — starts the internet-fetch MCP server (stdio)
 make mcp-fetch-build  # builds binary to bin/mcp-fetch
+
+make mcp-deepseek-run    # go run ./cmd/mcp-deepseek — starts the DeepSeek chat MCP server (stdio)
+make mcp-deepseek-build  # builds binary to bin/mcp-deepseek
 ```
 
 Run a single test: `go test ./internal/api -run TestCreateAndGetItem -v`
@@ -62,6 +65,16 @@ Three-layer structure, one direction of dependency: `cmd/server` → `internal/a
   dial time — checking the *resolved* address rather than the hostname is
   what stops DNS-rebinding bypassing the allowlist. See
   `internal/secfetch/config.go` for all `MCP_FETCH_*` env vars.
+- **`cmd/mcp-deepseek`** — another separate composition root, exposing one
+  tool, `deepseek_chat`, backed by `internal/deepseek`.
+- **`internal/deepseek`** — a client for DeepSeek's OpenAI-compatible
+  chat-completions API. Unlike `internal/secfetch`, it always dials a single
+  fixed, operator-configured host rather than a caller-supplied URL, so it
+  has no allowlist/SSRF surface to defend — that threat model is specific to
+  `fetch_url`'s "fetch whatever URL the model asks for" design, not this
+  one. Fails closed per-call (clear error, not a crash) when
+  `DEEPSEEK_API_KEY` is unset. See `internal/deepseek/config.go` for all
+  `DEEPSEEK_*` env vars.
 
 Adding a new resource means: add table + CRUD methods in `store`, add a handler
 + route in `api`, no changes needed elsewhere.

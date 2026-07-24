@@ -1,4 +1,4 @@
-.PHONY: build run test lint vet clean mcp-fetch-build mcp-fetch-run
+.PHONY: build run test lint vet clean mcp-fetch-build mcp-fetch-run mcp-deepseek-build mcp-deepseek-run
 
 build:
 	go build -o bin/server ./cmd/server
@@ -11,6 +11,12 @@ mcp-fetch-build:
 
 mcp-fetch-run:
 	go run ./cmd/mcp-fetch
+
+mcp-deepseek-build:
+	go build -o bin/mcp-deepseek ./cmd/mcp-deepseek
+
+mcp-deepseek-run:
+	go run ./cmd/mcp-deepseek
 
 test:
 	go test ./...
