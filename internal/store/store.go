@@ -148,8 +148,8 @@ func (s *Store) migrateMemories() error {
 	return err
 }
 
-func (s *Store) ListItems() ([]Item, error) {
-	rows, err := s.db.Query(`SELECT id, name, created_at FROM items ORDER BY id`)
+func (s *Store) ListItems(limit, offset int) ([]Item, error) {
+	rows, err := s.db.Query(`SELECT id, name, created_at FROM items ORDER BY id LIMIT ? OFFSET ?`, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -164,6 +164,12 @@ func (s *Store) ListItems() ([]Item, error) {
 		items = append(items, it)
 	}
 	return items, rows.Err()
+}
+
+func (s *Store) CountItems() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM items`).Scan(&n)
+	return n, err
 }
 
 func (s *Store) GetItem(id int64) (Item, error) {

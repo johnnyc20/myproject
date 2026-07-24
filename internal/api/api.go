@@ -53,12 +53,56 @@ func (a *API) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) handleListItems(w http.ResponseWriter, r *http.Request) {
-	items, err := a.store.ListItems()
+	limit := 20
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, errors.New("invalid limit"))
+			return
+		}
+		limit = n
+	}
+	if limit < 1 || limit > 100 {
+		writeError(w, http.StatusBadRequest, errors.New("limit must be between 1 and 100"))
+		return
+	}
+
+	offset := 0
+	if v := r.URL.Query().Get("offset"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, errors.New("invalid offset"))
+			return
+		}
+		offset = n
+	}
+	if offset < 0 {
+		writeError(w, http.StatusBadRequest, errors.New("offset must not be negative"))
+		return
+	}
+
+	items, err := a.store.ListItems(limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, items)
+	total, err := a.store.CountItems()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, struct {
+		Items  []store.Item `json:"items"`
+		Total  int          `json:"total"`
+		Limit  int          `json:"limit"`
+		Offset int          `json:"offset"`
+	}{
+		Items:  items,
+		Total:  total,
+		Limit:  limit,
+		Offset: offset,
+	})
 }
 
 func (a *API) handleCreateItem(w http.ResponseWriter, r *http.Request) {
