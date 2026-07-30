@@ -116,6 +116,18 @@ func TestUpdateAndDeleteWidget(t *testing.T) {
 	}
 }
 
+func TestGetNoteNotFound(t *testing.T) {
+	a := newTestAPI(t)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/notes/999", nil)
+	getRec := httptest.NewRecorder()
+	a.Routes().ServeHTTP(getRec, getReq)
+
+	if getRec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", getRec.Code, getRec.Body.String())
+	}
+}
+
 func createMemory(t *testing.T, a *API, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/memories", strings.NewReader(body))
