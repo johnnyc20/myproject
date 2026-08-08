@@ -1,5 +1,17 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "git -C /home/ai/agent-lessons pull --ff-only --quiet 2>/dev/null; python3 /home/ai/agent-lessons/lessons/query_lessons_graph.py \"Go HTTP API server SQLite modernc.org/sqlite cmd/server internal/api internal/store migrate Open Go 1.22 mux http.ServeMux PathValue database/sql\" --top-k 5",
+            "statusMessage": "Loading relevant lessons..."
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
@@ -13,6 +25,28 @@
             "type": "command",
             "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in *.go) gofmt -w \"$f\" ;; esac; } 2>/dev/null || true",
             "statusMessage": "Running gofmt..."
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /home/ai/agent-lessons/hooks/on-error.py",
+            "statusMessage": "Checking retry caps..."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 /home/ai/agent-lessons/hooks/on-stop.py",
+            "statusMessage": "Extracting lessons..."
           }
         ]
       }
