@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"log"
@@ -83,12 +84,12 @@ func (a *API) handleListItems(w http.ResponseWriter, r *http.Request) {
 
 	items, err := a.store.ListItems(limit, offset)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		writeStoreError(w, "item", err)
 		return
 	}
 	total, err := a.store.CountItems()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		writeStoreError(w, "item", err)
 		return
 	}
 
@@ -109,8 +110,7 @@ func (a *API) handleCreateItem(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name string `json:"name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.Name == "" {
@@ -119,7 +119,7 @@ func (a *API) handleCreateItem(w http.ResponseWriter, r *http.Request) {
 	}
 	item, err := a.store.CreateItem(body.Name)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		writeStoreError(w, "item", err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, item)
@@ -133,7 +133,7 @@ func (a *API) handleGetItem(w http.ResponseWriter, r *http.Request) {
 	}
 	item, err := a.store.GetItem(id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, err)
+		writeStoreError(w, "item", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, item)
@@ -146,7 +146,7 @@ func (a *API) handleDeleteItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.store.DeleteItem(id); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		writeStoreError(w, "item", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -155,7 +155,7 @@ func (a *API) handleDeleteItem(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleListWidgets(w http.ResponseWriter, r *http.Request) {
 	widgets, err := a.store.ListWidgets()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		writeStoreError(w, "widget", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, widgets)
@@ -166,8 +166,7 @@ func (a *API) handleCreateWidget(w http.ResponseWriter, r *http.Request) {
 		Name  string `json:"name"`
 		Price int64  `json:"price"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.Name == "" {
@@ -180,7 +179,7 @@ func (a *API) handleCreateWidget(w http.ResponseWriter, r *http.Request) {
 	}
 	widget, err := a.store.CreateWidget(body.Name, body.Price)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		writeStoreError(w, "widget", err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, widget)
@@ -194,7 +193,7 @@ func (a *API) handleGetWidget(w http.ResponseWriter, r *http.Request) {
 	}
 	widget, err := a.store.GetWidget(id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, err)
+		writeStoreError(w, "widget", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, widget)
@@ -210,8 +209,7 @@ func (a *API) handleUpdateWidget(w http.ResponseWriter, r *http.Request) {
 		Name  string `json:"name"`
 		Price int64  `json:"price"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.Name == "" {
@@ -224,7 +222,7 @@ func (a *API) handleUpdateWidget(w http.ResponseWriter, r *http.Request) {
 	}
 	widget, err := a.store.UpdateWidget(id, body.Name, body.Price)
 	if err != nil {
-		writeError(w, http.StatusNotFound, err)
+		writeStoreError(w, "widget", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, widget)
@@ -237,7 +235,7 @@ func (a *API) handleDeleteWidget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.store.DeleteWidget(id); err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		writeStoreError(w, "widget", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -246,7 +244,7 @@ func (a *API) handleDeleteWidget(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleListNotes(w http.ResponseWriter, r *http.Request) {
 	notes, err := a.store.ListNotes()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		writeStoreError(w, "note", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, notes)
@@ -256,13 +254,12 @@ func (a *API) handleCreateNote(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Body string `json:"body"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	note, err := a.store.CreateNote(body.Body)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		writeStoreError(w, "note", err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, note)
@@ -276,7 +273,7 @@ func (a *API) handleGetNote(w http.ResponseWriter, r *http.Request) {
 	}
 	note, err := a.store.GetNote(id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, err)
+		writeStoreError(w, "note", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, note)
@@ -290,7 +287,7 @@ func (a *API) handleListMemories(w http.ResponseWriter, r *http.Request) {
 	}
 	memories, err := a.store.ListMemories(memType)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		writeStoreError(w, "memory", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, memories)
@@ -303,8 +300,7 @@ func (a *API) handleCreateMemory(w http.ResponseWriter, r *http.Request) {
 		Description string `json:"description"`
 		Content     string `json:"content"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, err)
+	if !decodeJSON(w, r, &body) {
 		return
 	}
 	if body.Name == "" {
@@ -325,7 +321,7 @@ func (a *API) handleCreateMemory(w http.ResponseWriter, r *http.Request) {
 	}
 	memory, err := a.store.CreateMemory(body.Name, body.Type, body.Description, body.Content)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		writeStoreError(w, "memory", err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, memory)
@@ -339,7 +335,7 @@ func (a *API) handleGetMemory(w http.ResponseWriter, r *http.Request) {
 	}
 	memory, err := a.store.GetMemory(id)
 	if err != nil {
-		writeError(w, http.StatusNotFound, err)
+		writeStoreError(w, "memory", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, memory)
@@ -352,7 +348,7 @@ func (a *API) handleDeleteMemory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.store.DeleteMemory(id); err != nil {
-		writeError(w, http.StatusNotFound, err)
+		writeStoreError(w, "memory", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -366,7 +362,7 @@ func (a *API) handleSearchMemories(w http.ResponseWriter, r *http.Request) {
 	}
 	memories, err := a.store.SearchMemories(q)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
+		writeStoreError(w, "memory", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, memories)
@@ -382,4 +378,29 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, map[string]string{"error": err.Error()})
+}
+
+// decodeJSON decodes the request body into v, writing a sanitized 400 error
+// and returning false on failure. The real decode error (which can quote raw
+// request bytes) is logged server-side rather than sent to the client.
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		log.Printf("decode request body: %v", err)
+		writeError(w, http.StatusBadRequest, errors.New("invalid request body"))
+		return false
+	}
+	return true
+}
+
+// writeStoreError translates an error from the store layer into a client-safe
+// response: sql.ErrNoRows becomes a 404 with a generic "not found" message,
+// anything else becomes a 500 with no internal detail. The real error is
+// always logged server-side.
+func writeStoreError(w http.ResponseWriter, resource string, err error) {
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusNotFound, errors.New(resource+" not found"))
+		return
+	}
+	log.Printf("%s: %v", resource, err)
+	writeError(w, http.StatusInternalServerError, errors.New("internal server error"))
 }
