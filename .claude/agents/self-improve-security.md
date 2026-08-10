@@ -45,6 +45,27 @@ git checkout master && git pull
 If `git status` shows anything, stop and report it instead of proceeding —
 do not stash or discard work you didn't create.
 
+Also list open PRs from prior runs of this same agent before doing any
+work: `gh pr list --state open --search "head:auto/weekly-maintenance- OR head:auto/offline-vulndb-"`
+(or the equivalent `mcp__github__list_pull_requests` call if `gh` isn't
+available). Evidence this matters: PR #1 (2026-07-20) bumped
+`golang.org/x/sys` v0.44.0 → v0.46.0; PR #4 (2026-07-27) bumped the exact
+same dependency v0.44.0 → v0.47.0, because the 07-27 run's `master` still
+had the old version — PR #1 had never merged — and nothing in this agent's
+instructions checked for that. Three consecutive weekly runs (#1, #2, #4)
+were still open and unreviewed a week or more after creation as of the
+2026-08-10 run. Concretely:
+- If a routine (no-CVE) version bump you're about to propose in Pass 1
+  duplicates one already sitting in an open PR from a prior run, don't
+  open another PR for it — report that it's already proposed in `#<N>`
+  and skip it. A real CVE fix is never skipped this way, only opportunistic
+  version-currency bumps (Pass 1 step 4).
+- If 3 or more PRs opened by this agent are still open at the start of a
+  run, say so plainly in this run's PR body (or in the "no action needed"
+  report if this run makes no changes) — a growing backlog of unreviewed
+  automation PRs is itself worth a human's attention, separate from
+  whatever this run finds.
+
 ## Pass 1 — Security
 
 1. Run `go run golang.org/x/vuln/cmd/govulncheck@latest ./...`. The first
