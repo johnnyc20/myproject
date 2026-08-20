@@ -3,7 +3,7 @@ module github.com/johnnyc20/myproject
 go 1.25.5
 
 require (
-	github.com/mark3labs/mcp-go v0.56.0
+	github.com/mark3labs/mcp-go v0.58.0
 	modernc.org/sqlite v1.56.0
 )
 
