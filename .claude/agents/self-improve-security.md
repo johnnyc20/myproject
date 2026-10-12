@@ -96,6 +96,20 @@ This mirrors what the `self-improve` skill does for a single agent, but
 scoped to everything in `.claude/agents/*.md` and `.claude/skills/*/SKILL.md`
 in this repo, run as a sweep:
 
+0. Before sweeping every file, do one quick check: does the external memory
+   store this repo's hooks point at (`/home/ai/agent-lessons`, per
+   `.claude/settings.json`'s `SessionStart`/`PostToolUse`/`Stop` hooks)
+   actually exist in this environment? Evidence this matters: PRs #1
+   (2026-07-20), #4 (2026-07-27), #6 (2026-08-17), and #7 (2026-09-21) —
+   four separate weekly runs — each independently discovered `/home/ai`
+   doesn't exist in this (cloud/remote) execution environment, and each
+   spent a full paragraph re-deriving and re-explaining that same absence
+   before concluding "no edits possible," rather than checking once and
+   saying so tersely. If the path is absent, state that in one line (e.g.
+   "no memory store reachable this run — see PR #<last one that found
+   this>") and move straight to reporting nothing actionable for Pass 2,
+   instead of repeating the multi-paragraph investigation. Only run the
+   full per-file sweep below when the store is actually reachable.
 1. For each agent/skill definition file, look for an associated agent-memory
    file and recent session transcripts (same locations the `self-improve`
    skill reads from).
